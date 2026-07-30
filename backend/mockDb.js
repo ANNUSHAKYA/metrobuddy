@@ -1,14 +1,4 @@
-// In-memory data store to act as a mock database
-const mockUsers = [];
-const mockOtps = new Map();
-const mockJourneys = [];
-const mockMatches = [];
-const mockMessages = [];
+// Metro Buddy Supabase Database Layer
+const supabaseDb = require('./supabaseDb');
 
-module.exports = {
-  users: mockUsers,
-  otps: mockOtps,
-  journeys: mockJourneys,
-  matches: mockMatches,
-  messages: mockMessages
-};
+module.exports = supabaseDb;

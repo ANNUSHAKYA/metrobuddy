@@ -51,9 +51,11 @@ const findMatchForJourney = (newJourney) => {
 };
 
 // Helper: Execute a match between two journeys
-const executeMatch = (j1, j2) => {
+const executeMatch = async (j1, j2) => {
   j1.status = 'matched';
   j2.status = 'matched';
+  await db.updateJourneyStatus(j1.id, 'matched');
+  await db.updateJourneyStatus(j2.id, 'matched');
 
   const user1 = db.users.find(u => u.id === j1.userId) || { id: j1.userId, anonymousHandle: 'Buddy_A' };
   const user2 = db.users.find(u => u.id === j2.userId) || { id: j2.userId, anonymousHandle: 'Buddy_B' };
@@ -71,7 +73,7 @@ const executeMatch = (j1, j2) => {
     createdAt: new Date().toISOString()
   };
 
-  db.matches.push(newMatch);
+  await db.createMatch(newMatch);
   return newMatch;
 };
 
@@ -87,11 +89,12 @@ router.post('/', auth, async (req, res) => {
 
   try {
     // Check if user already has an active journey, if so, deactivate it first
-    db.journeys.forEach(j => {
+    for (const j of db.journeys) {
       if (j.userId === req.user.id && j.status === 'active') {
         j.status = 'cancelled';
+        await db.updateJourneyStatus(j.id, 'cancelled');
       }
-    });
+    }
 
     const newJourney = {
       id: String(Date.now()),
@@ -104,14 +107,14 @@ router.post('/', auth, async (req, res) => {
       createdAt: new Date().toISOString()
     };
     
-    db.journeys.push(newJourney);
+    await db.createJourney(newJourney);
 
     // Try to find a match
     const matchedJourney = findMatchForJourney(newJourney);
     let match = null;
 
     if (matchedJourney) {
-      match = executeMatch(newJourney, matchedJourney);
+      match = await executeMatch(newJourney, matchedJourney);
       console.log(`[MATCH ENGINE] Matched Journey ${newJourney.id} with ${matchedJourney.id}`);
     }
 
@@ -170,9 +173,10 @@ router.post('/cancel', auth, async (req, res) => {
       (j.status === 'active' || j.status === 'matched')
     );
 
-    activeJourneys.forEach(j => {
+    for (const j of activeJourneys) {
       j.status = 'cancelled';
-    });
+      await db.updateJourneyStatus(j.id, 'cancelled');
+    }
 
     // Check if they were in an active match
     const matchIndex = db.matches.findIndex(m => 
@@ -183,15 +187,12 @@ router.post('/cancel', auth, async (req, res) => {
     if (matchIndex !== -1) {
       const match = db.matches[matchIndex];
       match.status = 'cancelled';
+      await db.updateMatchStatus(match.id, 'cancelled');
 
-      // SAFETY: Purge all chat messages for this match (hard expiry)
+      // SAFETY: Purge all chat messages for this match in Supabase & memory (hard expiry)
       const matchId = match.id;
-      for (let i = db.messages.length - 1; i >= 0; i--) {
-        if (db.messages[i].matchId === matchId) {
-          db.messages.splice(i, 1);
-        }
-      }
-      console.log(`[SAFETY] Purged all chat messages for match ${matchId}`);
+      await db.purgeMatchMessages(matchId);
+      console.log(`[SUPABASE SAFETY] Purged all chat messages for match ${matchId}`);
 
       // Re-activate the OTHER user's journey so they go back into the matching pool!
       const otherUserId = match.user1.id === userId ? match.user2.id : match.user1.id;
@@ -200,6 +201,7 @@ router.post('/cancel', auth, async (req, res) => {
       const otherJourney = db.journeys.find(j => j.id === otherJourneyId);
       if (otherJourney) {
         otherJourney.status = 'active';
+        await db.updateJourneyStatus(otherJourney.id, 'active');
         console.log(`[MATCH ENGINE] Match dissolved. Journey ${otherJourney.id} returned to 'active' search.`);
       }
     }
@@ -225,7 +227,7 @@ router.post('/simulate-match', auth, async (req, res) => {
     }
 
     // Create a mock user if CommuteBuddy_99 doesn't exist
-    let buddy = db.users.find(u => u.id === 'buddy_99');
+    let buddy = await db.findUserById('buddy_99');
     if (!buddy) {
       buddy = {
         id: 'buddy_99',
@@ -234,7 +236,7 @@ router.post('/simulate-match', auth, async (req, res) => {
         verificationTier: 2,
         trustScore: 98
       };
-      db.users.push(buddy);
+      await db.createUser(buddy);
     }
 
     // Create a matching journey for the buddy
@@ -248,10 +250,10 @@ router.post('/simulate-match', auth, async (req, res) => {
       status: 'active',
       createdAt: new Date().toISOString()
     };
-    db.journeys.push(buddyJourney);
+    await db.createJourney(buddyJourney);
 
     // Execute match
-    const match = executeMatch(userJourney, buddyJourney);
+    const match = await executeMatch(userJourney, buddyJourney);
     console.log(`[SIMULATOR] Simulated match created between ${userId} and buddy_99`);
 
     res.json({ match });

@@ -81,7 +81,7 @@ router.post('/:matchId/messages', auth, async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    db.messages.push(newMessage);
+    await db.createMessage(newMessage);
     res.json(newMessage);
   } catch (err) {
     console.error(err.message);
@@ -117,12 +117,10 @@ router.post('/message/:messageId/reveal', auth, async (req, res) => {
       return res.status(400).json({ error: 'Media already opened' });
     }
 
-    // Mark as opened and immediately scrub the mediaUrl to prevent access
-    message.isOpened = true;
-    message.mediaUrl = null;
-    message.content = 'Opened';
+    // Mark as opened and immediately scrub the mediaUrl in Supabase & memory
+    const updatedMessage = await db.revealViewOnceMessage(messageId);
 
-    res.json({ message: 'View-once media marked as opened and deleted', updatedMessage: message });
+    res.json({ message: 'View-once media marked as opened and deleted', updatedMessage });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -158,7 +156,7 @@ router.post('/:matchId/simulate-reply', auth, async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
-    db.messages.push(newMessage);
+    await db.createMessage(newMessage);
     res.json(newMessage);
   } catch (err) {
     console.error(err.message);

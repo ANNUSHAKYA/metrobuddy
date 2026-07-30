@@ -4,10 +4,8 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'metrobuddy_secret_dev';
 
-// Import shared in-memory database
+// Import Supabase database adapter
 const db = require('../mockDb');
-const mockOtps = db.otps;
-const mockUsers = db.users;
 
 // @route   POST /api/auth/send-otp
 router.post('/send-otp', async (req, res) => {
@@ -18,9 +16,9 @@ router.post('/send-otp', async (req, res) => {
 
   // Generate a mock 6-digit OTP
   const otp = '123456';
-  mockOtps.set(phone, otp);
+  await db.setOtp(phone, otp);
 
-  console.log(`[MOCK OTP] Sent OTP ${otp} to phone ${phone}`);
+  console.log(`[SUPABASE Auth] Sent OTP ${otp} to phone ${phone}`);
 
   res.json({ message: 'OTP sent successfully' });
 });
@@ -33,22 +31,22 @@ router.post('/verify-otp', async (req, res) => {
     return res.status(400).json({ error: 'Phone and OTP are required' });
   }
 
-  const validOtp = mockOtps.get(phone);
+  const validOtp = await db.getOtp(phone);
   if (validOtp !== otp) {
     return res.status(401).json({ error: 'Invalid or expired OTP' });
   }
 
   // Clear OTP
-  mockOtps.delete(phone);
+  await db.deleteOtp(phone);
 
   try {
-    let user = mockUsers.find(u => u.phone === phone);
+    let user = await db.findUserByPhone(phone);
     let isNewUser = false;
-    
-    // If new user, create them
+
+    // If new user, create them in Supabase
     if (!user) {
       user = { id: String(Date.now()), phone, anonymousHandle: null, verificationTier: 1, trustScore: 100 };
-      mockUsers.push(user);
+      await db.createUser(user);
       isNewUser = true;
     }
 
@@ -81,20 +79,15 @@ router.post('/profile', async (req, res) => {
     const userId = decoded.user.id;
 
     // Check if handle is taken
-    const existingHandle = mockUsers.find(u => u.anonymousHandle === handle);
-    if (existingHandle && existingHandle.id !== userId) {
+    const existingUser = db.users.find(u => u.anonymousHandle === handle);
+    if (existingUser && existingUser.id !== userId) {
       return res.status(400).json({ error: 'Handle is already taken' });
     }
 
-    // Update user
-    const userIndex = mockUsers.findIndex(u => u.id === userId);
-    if (userIndex === -1) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    mockUsers[userIndex].anonymousHandle = handle;
+    // Update user handle in Supabase
+    const updatedUser = await db.updateUserHandle(userId, handle);
 
-    res.json({ message: 'Profile updated successfully', user: mockUsers[userIndex] });
+    res.json({ message: 'Profile updated successfully', user: updatedUser });
   } catch (err) {
     console.error(err.message);
     res.status(401).json({ error: 'Invalid token' });
