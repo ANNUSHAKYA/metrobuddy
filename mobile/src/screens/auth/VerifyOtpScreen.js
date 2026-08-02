@@ -11,7 +11,7 @@ const TEAL = '#008080';
 const BEIGE = '#F5F5DC';
 
 export default function VerifyOtpScreen({ route, navigation }) {
-  const { phone } = route.params;
+  const { phone, devOtp } = route.params;
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const { width } = useWindowDimensions();
@@ -38,11 +38,23 @@ export default function VerifyOtpScreen({ route, navigation }) {
       }
       // else: AppNavigator switches to Main stack automatically
     } catch (err) {
-      Alert.alert('Error', 'Invalid OTP. Please try again.');
+      const msg = err.response?.data?.error || 'Invalid OTP. Please try again.';
+      Alert.alert('Verification Failed', msg);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAutoFill = () => {
+    if (devOtp) {
+      setOtp(devOtp);
+    }
+  };
+
+  // Mask phone for display: +91987****210
+  const maskedPhone = phone
+    ? phone.slice(0, phone.length - 7) + '****' + phone.slice(-3)
+    : phone;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -51,16 +63,33 @@ export default function VerifyOtpScreen({ route, navigation }) {
         style={[styles.inner, isTablet && styles.innerCentered]}
       >
         <View style={[styles.card, { maxWidth: contentMaxWidth, width: '100%' }, isDesktop && styles.cardDesktop]}>
+          {/* Dev Mode Banner */}
+          {devOtp && (
+            <View style={styles.devBanner}>
+              <View style={styles.devBannerHeader}>
+                <Text style={styles.devBannerIcon}>⚡</Text>
+                <Text style={styles.devBannerLabel}>DEV MODE</Text>
+              </View>
+              <Text style={styles.devBannerCode}>{devOtp}</Text>
+              <TouchableOpacity style={styles.autoFillButton} onPress={handleAutoFill}>
+                <Text style={styles.autoFillText}>Auto-fill Code</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.header}>
             <Text style={styles.title}>Verify Phone</Text>
-            <Text style={styles.subtitle}>Enter the OTP sent to {phone}</Text>
+            <Text style={styles.subtitle}>
+              Enter the 6-digit code sent to{'\n'}
+              <Text style={styles.phoneHighlight}>{maskedPhone}</Text>
+            </Text>
           </View>
 
           <View style={styles.inputBlock}>
             <TextInput
               style={styles.otpInput}
-              placeholder="123456"
-              placeholderTextColor="#bbb"
+              placeholder="000000"
+              placeholderTextColor="#ccc"
               keyboardType="number-pad"
               maxLength={6}
               value={otp}
@@ -79,9 +108,11 @@ export default function VerifyOtpScreen({ route, navigation }) {
             </Text>
           </TouchableOpacity>
 
-          <Text style={styles.hint}>
-            Use code <Text style={styles.hintBold}>123456</Text> for testing
-          </Text>
+          {!devOtp && (
+            <Text style={styles.hint}>
+              Didn't receive the code? Check your SMS inbox.
+            </Text>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -112,6 +143,48 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
+  // Dev banner
+  devBanner: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  devBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  devBannerIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  devBannerLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#fbbf24',
+    letterSpacing: 1.5,
+  },
+  devBannerCode: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 8,
+    marginBottom: 10,
+  },
+  autoFillButton: {
+    backgroundColor: TEAL,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  autoFillText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  // Header
   header: {
     marginBottom: 36,
   },
@@ -122,8 +195,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#666',
+    lineHeight: 22,
+  },
+  phoneHighlight: {
+    fontWeight: '700',
+    color: TEAL,
   },
   inputBlock: {
     marginBottom: 28,
@@ -165,9 +243,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#999',
     fontSize: 13,
-  },
-  hintBold: {
-    fontWeight: '700',
-    color: TEAL,
   },
 });
