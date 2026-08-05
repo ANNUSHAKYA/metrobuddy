@@ -47,22 +47,23 @@ function checkLimit(key, max) {
   return { allowed: true, remaining: max - entry.count };
 }
 
-// ─── Middleware: Rate limit by phone number ───────────────────
+// ─── Middleware: Rate limit by identifier (phone OR email) ────
 function otpPhoneRateLimiter(req, res, next) {
-  const phone = req.body?.phone;
-  if (!phone) return next();
+  // Accept either phone or email as the per-identifier key
+  const identifier = req.body?.phone || req.body?.email;
+  if (!identifier) return next();
 
-  const key = `otp_phone:${phone}`;
+  const key = `otp_identifier:${identifier.toLowerCase()}`;
   const result = checkLimit(key, MAX_PER_PHONE);
 
   if (!result.allowed) {
     return res.status(429).json({
-      error: 'Too many OTP requests for this number. Please try again later.',
+      error: 'Too many verification code requests. Please try again later.',
       retryAfterSeconds: result.retryAfterSec,
     });
   }
 
-  res.setHeader('X-RateLimit-Remaining-Phone', result.remaining);
+  res.setHeader('X-RateLimit-Remaining', result.remaining);
   next();
 }
 

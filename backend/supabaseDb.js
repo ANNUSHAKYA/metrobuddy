@@ -27,6 +27,28 @@ async function findUserByPhone(phone) {
     const user = {
       id: res.data.id,
       phone: res.data.phone,
+      email: res.data.email || null,
+      anonymousHandle: res.data.anonymous_handle,
+      verificationTier: res.data.verification_tier,
+      trustScore: res.data.trust_score
+    };
+    if (!mockUsers.find(u => u.id === user.id)) mockUsers.push(user);
+    return user;
+  }
+  return null;
+}
+
+async function findUserByEmail(email) {
+  const normalized = email.toLowerCase().trim();
+  const local = mockUsers.find(u => u.email && u.email.toLowerCase() === normalized);
+  if (local) return local;
+
+  const res = await safeQuery(() => supabase.from('users').select('*').eq('email', normalized).single());
+  if (res && res.data) {
+    const user = {
+      id: res.data.id,
+      phone: res.data.phone || null,
+      email: res.data.email,
       anonymousHandle: res.data.anonymous_handle,
       verificationTier: res.data.verification_tier,
       trustScore: res.data.trust_score
@@ -62,7 +84,8 @@ async function createUser(user) {
   }
   await safeQuery(() => supabase.from('users').insert([{
     id: user.id,
-    phone: user.phone,
+    phone: user.phone || null,
+    email: user.email ? user.email.toLowerCase().trim() : null,
     anonymous_handle: user.anonymousHandle,
     verification_tier: user.verificationTier || 1,
     trust_score: user.trustScore || 100
@@ -197,6 +220,7 @@ module.exports = {
 
   // Supabase Async API Methods
   findUserByPhone,
+  findUserByEmail,
   findUserById,
   createUser,
   updateUserHandle,
