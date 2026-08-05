@@ -1,9 +1,23 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
 
-// For local dev with android emulator use 10.0.2.2, for iOS use localhost
-// Use your local IP if running on physical device
-const API_URL = 'http://localhost:5001/api';
+// Dynamic host resolution helper for multi-device & LAN support
+export function getBaseHost() {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/api\/?$/, '');
+  }
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    const protocol = window.location.protocol;
+    // If backend is on same host or local web dev port
+    return `${protocol}//${host}:5001`;
+  }
+  // Mobile fallback
+  return 'http://localhost:5001';
+}
+
+const API_URL = `${getBaseHost()}/api`;
 
 const client = axios.create({
   baseURL: API_URL,

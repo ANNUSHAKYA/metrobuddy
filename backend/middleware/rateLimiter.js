@@ -69,6 +69,10 @@ function otpPhoneRateLimiter(req, res, next) {
 // ─── Middleware: Rate limit by IP address ─────────────────────
 function otpIpRateLimiter(req, res, next) {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
+  // Allow local loopback addresses during development testing
+  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'unknown') {
+    return next();
+  }
   const key = `otp_ip:${ip}`;
   const result = checkLimit(key, MAX_PER_IP);
 

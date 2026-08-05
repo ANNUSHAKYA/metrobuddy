@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../mockDb');
+const { notifyMatchFound, notifyJourneyEnded } = require('../socket');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'metrobuddy_secret_dev';
 
@@ -57,8 +58,8 @@ const executeMatch = async (j1, j2) => {
   await db.updateJourneyStatus(j1.id, 'matched');
   await db.updateJourneyStatus(j2.id, 'matched');
 
-  const user1 = db.users.find(u => u.id === j1.userId) || { id: j1.userId, anonymousHandle: 'Buddy_A' };
-  const user2 = db.users.find(u => u.id === j2.userId) || { id: j2.userId, anonymousHandle: 'Buddy_B' };
+  const user1 = (await db.findUserById(j1.userId)) || { id: j1.userId, anonymousHandle: 'Buddy_A' };
+  const user2 = (await db.findUserById(j2.userId)) || { id: j2.userId, anonymousHandle: 'Buddy_B' };
 
   const newMatch = {
     id: String(Date.now()),
@@ -74,6 +75,10 @@ const executeMatch = async (j1, j2) => {
   };
 
   await db.createMatch(newMatch);
+
+  // Emit real-time Socket.IO match:found event to both users!
+  notifyMatchFound(user1.id, user2.id, newMatch);
+
   return newMatch;
 };
 
@@ -88,11 +93,17 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
-    // Check if user already has an active journey, if so, deactivate it first
+    // Check if user already has an active journey or match, if so, cancel it first
     for (const j of db.journeys) {
-      if (j.userId === req.user.id && j.status === 'active') {
+      if (j.userId === req.user.id && (j.status === 'active' || j.status === 'matched')) {
         j.status = 'cancelled';
         await db.updateJourneyStatus(j.id, 'cancelled');
+      }
+    }
+    for (const m of db.matches) {
+      if ((m.user1.id === req.user.id || m.user2.id === req.user.id) && m.status === 'active') {
+        m.status = 'cancelled';
+        await db.updateMatchStatus(m.id, 'cancelled');
       }
     }
 
@@ -109,7 +120,7 @@ router.post('/', auth, async (req, res) => {
     
     await db.createJourney(newJourney);
 
-    // Try to find a match
+    // Try to find a match among all real active journeys
     const matchedJourney = findMatchForJourney(newJourney);
     let match = null;
 
@@ -188,6 +199,9 @@ router.post('/cancel', auth, async (req, res) => {
       const match = db.matches[matchIndex];
       match.status = 'cancelled';
       await db.updateMatchStatus(match.id, 'cancelled');
+
+      // Emit journey:ended real-time socket event
+      notifyJourneyEnded(match.id, match.user1.id, match.user2.id);
 
       // SAFETY: Purge all chat messages for this match in Supabase & memory (hard expiry)
       const matchId = match.id;

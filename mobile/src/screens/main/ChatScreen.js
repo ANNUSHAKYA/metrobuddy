@@ -6,6 +6,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import client from '../../api/client';
+import { getSocket } from '../../api/socketClient';
 import { useAuthStore } from '../../store/useAuthStore';
 
 const TEAL = '#008080';
@@ -51,7 +52,7 @@ export default function ChatScreen({ route, navigation }) {
     Array.from({ length: 20 }, () => new Animated.Value(4))
   ).current;
 
-  // ─── Poll messages every 2 seconds ───
+  // ─── Real-Time WebSockets + Backup Polling ───
   useEffect(() => {
     const fetchMessages = async () => {
       try {
@@ -62,9 +63,45 @@ export default function ChatScreen({ route, navigation }) {
       }
     };
     fetchMessages();
-    const interval = setInterval(fetchMessages, 2000);
-    return () => clearInterval(interval);
-  }, [matchId]);
+
+    // Attach Socket.IO
+    const socket = getSocket();
+    if (socket) {
+      socket.emit('chat:join', { matchId });
+
+      socket.on('chat:message', (newMsg) => {
+        console.log('⚡ [Socket] Real-time message received:', newMsg);
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+      });
+
+      socket.on('chat:view_once_opened', ({ messageId }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, isOpened: true, mediaUrl: null, content: 'Opened' } : m
+          )
+        );
+      });
+
+      socket.on('journey:ended', () => {
+        Alert.alert('Commute Ended', 'Your metro buddy has ended the commute.');
+        navigation.replace('JourneyCreation');
+      });
+    }
+
+    const interval = setInterval(fetchMessages, 3000);
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.emit('chat:leave', { matchId });
+        socket.off('chat:message');
+        socket.off('chat:view_once_opened');
+        socket.off('journey:ended');
+      }
+    };
+  }, [matchId, navigation]);
 
   // ─── Auto-scroll to bottom on new messages ───
   useEffect(() => {

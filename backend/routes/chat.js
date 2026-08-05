@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../mockDb');
+const { notifyChatMessage, notifyViewOnceOpened } = require('../socket');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'metrobuddy_secret_dev';
 
@@ -82,6 +83,10 @@ router.post('/:matchId/messages', auth, async (req, res) => {
     };
 
     await db.createMessage(newMessage);
+
+    // Broadcast real-time Socket.IO chat message event
+    notifyChatMessage(matchId, newMessage);
+
     res.json(newMessage);
   } catch (err) {
     console.error(err.message);
@@ -120,6 +125,9 @@ router.post('/message/:messageId/reveal', auth, async (req, res) => {
     // Mark as opened and immediately scrub the mediaUrl in Supabase & memory
     const updatedMessage = await db.revealViewOnceMessage(messageId);
 
+    // Broadcast real-time Socket.IO view-once opened event
+    notifyViewOnceOpened(message.matchId, messageId);
+
     res.json({ message: 'View-once media marked as opened and deleted', updatedMessage });
   } catch (err) {
     console.error(err.message);
@@ -157,6 +165,10 @@ router.post('/:matchId/simulate-reply', auth, async (req, res) => {
     };
 
     await db.createMessage(newMessage);
+
+    // Broadcast real-time Socket.IO chat message event
+    notifyChatMessage(matchId, newMessage);
+
     res.json(newMessage);
   } catch (err) {
     console.error(err.message);

@@ -5,6 +5,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import client from '../../api/client';
+import { getSocket } from '../../api/socketClient';
 import { getLinesForStation } from '../../data/delhiMetroData';
 
 const TEAL = '#008080';
@@ -20,20 +21,44 @@ export default function MatchingStatusScreen({ navigation }) {
   const contentMaxWidth = isDesktop ? 480 : isTablet ? 460 : '100%';
 
   useEffect(() => {
-    // Poll active match endpoint every 3 seconds
-    const interval = setInterval(async () => {
+    // 1. Setup real-time WebSockets
+    const socket = getSocket();
+    if (socket) {
+      socket.on('match:found', (data) => {
+        console.log('⚡ [Socket] Real-time match found!', data);
+        if (data && data.match) {
+          setMatch(data.match);
+        }
+      });
+
+      socket.on('journey:ended', () => {
+        console.log('🚫 [Socket] Journey ended');
+        setMatch(null);
+      });
+    }
+
+    // 2. Initial fetch & backup polling (every 3 seconds)
+    const checkActiveMatch = async () => {
       try {
         const res = await client.get('/journeys/active-match');
         if (res.data.match) {
           setMatch(res.data.match);
-          clearInterval(interval);
         }
       } catch (err) {
-        console.error('Error polling active match:', err);
+        console.error('Error checking active match:', err);
       }
-    }, 3000);
+    };
 
-    return () => clearInterval(interval);
+    checkActiveMatch();
+    const interval = setInterval(checkActiveMatch, 3000);
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.off('match:found');
+        socket.off('journey:ended');
+      }
+    };
   }, []);
 
   const handleCancel = async () => {
@@ -52,7 +77,6 @@ export default function MatchingStatusScreen({ navigation }) {
     setSimulating(true);
     try {
       await client.post('/journeys/simulate-match');
-      // The poll interval will pick it up automatically within 3 seconds
     } catch (err) {
       Alert.alert('Error', err.response?.data?.error || 'Failed to simulate match');
     } finally {
